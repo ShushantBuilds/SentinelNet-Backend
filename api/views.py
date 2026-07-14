@@ -88,27 +88,38 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = UserSerializer
 
 class ManageProfileView(APIView):
-    permission_classes = [IsAuthenticated] 
+    permission_classes = [IsAuthenticated] # Must be logged in
 
     def get(self, request):
-        # THE FIX: Safely get or create the profile
-        profile, created = OperatorProfile.objects.get_or_create(
-            user=request.user, 
-            defaults={'monthly_budget_limit': 5000.00}
-        )
-        return Response({"monthly_budget_limit": profile.monthly_budget_limit})
+        profile = request.user.profile
+        return Response({
+            "monthly_budget_limit": profile.monthly_budget_limit,
+            "total_accumulated_spend": getattr(profile, 'total_accumulated_spend', 0)
+        })
 
     def post(self, request):
-        # THE FIX: Safely get or create the profile
-        profile, created = OperatorProfile.objects.get_or_create(
-            user=request.user, 
-            defaults={'monthly_budget_limit': 5000.00}
-        )
+        profile = request.user.profile
         new_budget = request.data.get('monthly_budget_limit')
         
         if new_budget:
             profile.monthly_budget_limit = new_budget
             profile.save()
-            return Response({"message": "Budget updated successfully"})
+            return Response({"message": "Budget updated successfully."}, status=status.HTTP_200_OK)
+        return Response({"error": "Invalid data."}, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request):
+        """Resets the accumulated spend metrics for the user"""
+        profile = request.user.profile
+        
+        # 1. Reset the tracking field to 0 if stored directly on the profile
+        if hasattr(profile, 'total_accumulated_spend'):
+            profile.total_accumulated_spend = 0
+            profile.save()
             
-        return Response({"error": "No budget provided"}, status=400)
+        # 2. OPTIONAL: If spend is calculated from a Transaction model, clear them out:
+        # request.user.transactions.all().delete()
+        
+        return Response({
+            "message": "Total accumulated spend has been reset.",
+            "total_accumulated_spend": 0
+        }, status=status.HTTP_200_OK)
