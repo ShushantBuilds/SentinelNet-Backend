@@ -110,6 +110,8 @@ class ManageProfileView(APIView):
     def delete(self, request):
         """Resets the accumulated spend metrics for the user"""
         profile = request.user.profile
+
+        TransactionRecord.objects.filter(user=request.user).delete()
         
         # 1. Reset the tracking field to 0 if stored directly on the profile
         if hasattr(profile, 'total_accumulated_spend'):
