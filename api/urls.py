@@ -6,5 +6,5 @@ urlpatterns = [
     path('predict/', PredictFraudView.as_view(), name='predict_fraud'),
     path('register/', RegisterView.as_view(), name='register'),
     path('profile/', ManageProfileView.as_view(), name='profile'),
-    path('v1/ai/', AiAssistantView.as_view(), name='ai_assistant'),
+    path('ai/', AiAssistantView.as_view(), name='ai_assistant'),
 ]
