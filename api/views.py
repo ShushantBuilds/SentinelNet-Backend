@@ -65,24 +65,23 @@ class PredictFraudView(APIView):
             total_spent = float(total_spent_raw)
 
             advisory_message = ""
-            traffic_light = "green"
+            shield_status = "safe"
             
-            if is_fraud_detected or probability > 0.60:
-                traffic_light = "red"
-                advisory_message = "DO NOT SHIP. High probability of chargeback or fake payment receipt. Cancel order or demand wire transfer."
-            elif probability > 0.25:
-                traffic_light = "yellow"
-                advisory_message = "CAUTION: Unusual pattern detected. Verify the buyer's identity or contact them directly before fulfilling this order."
+            if is_fraud_detected or probability > 0.70:
+                shield_status = "danger"
+                advisory_message = "CRITICAL WARNING: High risk of phishing or fake storefront. Do not enter your credit card details on this page."
+            elif probability > 0.30:
+                shield_status = "warning"
+                advisory_message = "CAUTION: This store was flagged for suspicious activity or a newly registered domain. Verify the merchant before paying."
             else:
-                traffic_light = "green"
-                advisory_message = "CLEARED: Transaction matches safe customer patterns. Proceed with fulfillment."
+                shield_status = "safe"
+                advisory_message = "SECURE: This checkout page matches verified merchant patterns. It is safe to proceed."
             
             return Response({
                 "fraud_prediction": int(prediction),
                 "fraud_probability": round(float(probability), 4),
-                "traffic_light": traffic_light, # Send the color to React
+                "shield_status": shield_status, # Send status to React
                 "advisory": advisory_message,
-                "total_spent": float(total_spent) # We will rename this to "Total Verified Sales" in React
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
@@ -153,11 +152,10 @@ class AiAssistantView(APIView):
 
                 # THE GUARDRAIL: Strict rules for the Insight Engine
                 insight_rules = """
-                    You are the AI core of SentinelNet SME, a protection portal for small business owners and freelancers.
-                    You analyze incoming orders, revenue targets, and fraud risks (like chargebacks or fake receipts).
-                    Explain risk factors in simple, non-technical terms. 
-                    If an order is high risk, suggest practical steps (e.g., "Ask for ID verification", "Wait for funds to clear before shipping").
-                    Refuse any queries unrelated to business operations or fraud protection.
+                    You are the SentinelNet Checkout Shield, an AI built to protect everyday consumers from online shopping scams.
+                    The user is about to make a payment. You analyze e-commerce websites, merchant data, and checkout patterns for scam indicators (e.g., brand new domains, fake countdown timers, unencrypted gateways).
+                    Explain the exact risks to the shopper in plain, urgent language. 
+                    Refuse any queries unrelated to online shopping safety, e-commerce, or payment fraud.
                     """
                 
                 response = client.models.generate_content(
@@ -176,8 +174,8 @@ class AiAssistantView(APIView):
                 
                 # THE GUARDRAIL: Strict rules for the Chatbot
                 chat_rules = """
-                    You are SentinelNet Merchant Support. You help small business owners verify orders and protect against payment fraud.
-                    Keep your answers brief, empathetic, and actionable. Avoid deep technical jargon like "feature vectors."
+                    You are the SentinelNet Safety Assistant. Your job is to help shoppers identify phishing links, fake storefronts, and online scams. 
+                    Keep your answers brief, protective, and easy to understand for non-technical users.
                     """
                 
                 response = client.models.generate_content(
