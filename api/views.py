@@ -154,7 +154,7 @@ class AiAssistantView(APIView):
                 
                 # Updated API call syntax for the new Google GenAI SDK
                 response = client.models.generate_content(
-                    model='gemini-1.5-flash',
+                    model='gemini-3.5-flash',
                     contents=prompt
                 )
                 return Response({"response": response.text}, status=status.HTTP_200_OK)
@@ -165,7 +165,7 @@ class AiAssistantView(APIView):
                 
                 # Updated API call syntax for the new Google GenAI SDK
                 response = client.models.generate_content(
-                    model='gemini-1.5-flash',
+                    model='gemini-3.5-flash',
                     contents=prompt
                 )
                 return Response({"response": response.text}, status=status.HTTP_200_OK)
