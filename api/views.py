@@ -1,4 +1,3 @@
-import os
 from google import genai
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -14,8 +13,6 @@ from django.db.models import Sum
 from .models import *
 
 client = genai.Client()
-
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
 class HealthCheckView(APIView):
     def get(self, request):
