@@ -39,7 +39,7 @@ class PredictFraudView(APIView):
             
             prediction = ApiConfig.rf_model.predict(feature_array)[0]
             probability = ApiConfig.rf_model.predict_proba(feature_array)[0][1]
-            is_fraud_detected = bool(prediction == 1)
+            is_fraud_detected = bool(prediction > 0.30)
 
             TransactionRecord.objects.create(
                 user=request.user,
