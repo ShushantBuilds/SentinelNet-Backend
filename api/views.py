@@ -1,5 +1,5 @@
 import os
-import google.generativeai as genai
+from google import genai
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics
@@ -12,6 +12,8 @@ from django.contrib.auth.models import User
 # NEW IMPORTS FOR THE AI ADVISORY ENGINE
 from django.db.models import Sum
 from .models import *
+
+client = genai.Client()
 
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
@@ -137,15 +139,11 @@ class AiAssistantView(APIView):
         action_type = request.data.get('type')
         
         try:
-            # Using the fast Flash model
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
             if action_type == 'insight':
                 query = request.data.get('query')
                 history = request.data.get('history', [])
                 budget = request.data.get('budget', 0)
                 
-                # We inject the raw data into the prompt for the LLM to analyze
                 prompt = f"""
                 You are the AI core of SentinelNet, an enterprise financial fraud detection system. 
                 The operator has asked: "{query}"
@@ -157,14 +155,22 @@ class AiAssistantView(APIView):
                 Provide a highly professional, brief, and analytical response. Do not use markdown headers, just return a clean paragraph.
                 """
                 
-                response = model.generate_content(prompt)
+                # Updated API call syntax for the new Google GenAI SDK
+                response = client.models.generate_content(
+                    model='gemini-1.5-flash',
+                    contents=prompt
+                )
                 return Response({"response": response.text}, status=status.HTTP_200_OK)
                 
             elif action_type == 'chat':
                 message = request.data.get('message')
                 prompt = f"You are SentinelNet Support, a sleek, secure AI assistant. Answer the following operator query professionally and concisely: {message}"
                 
-                response = model.generate_content(prompt)
+                # Updated API call syntax for the new Google GenAI SDK
+                response = client.models.generate_content(
+                    model='gemini-1.5-flash',
+                    contents=prompt
+                )
                 return Response({"response": response.text}, status=status.HTTP_200_OK)
                 
             return Response({"error": "Invalid action type specified."}, status=status.HTTP_400_BAD_REQUEST)
