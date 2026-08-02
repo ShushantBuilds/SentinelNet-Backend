@@ -173,4 +173,4 @@ class AiAssistantView(APIView):
             return Response({"error": "Invalid action type specified."}, status=status.HTTP_400_BAD_REQUEST)
             
         except Exception as e:
-            return Response({"error": "AI Engine Offline or Error."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": f"Google API Error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
