@@ -1,4 +1,5 @@
 from google import genai
+from google.genai import types
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics
@@ -141,32 +142,49 @@ class AiAssistantView(APIView):
                 history = request.data.get('history', [])
                 budget = request.data.get('budget', 0)
                 
+                # The user's specific request
                 prompt = f"""
-                You are the AI core of SentinelNet, an enterprise financial fraud detection system. 
                 The operator has asked: "{query}"
-                
-                Current System Context:
-                - Target Monthly Budget: ${budget}
-                - Recent Intercepted Transactions: {history}
-                
-                Provide a highly professional, brief, and analytical response. Do not use markdown headers, just return a clean paragraph.
+                Current System Context: Target Budget: ${budget}, Recent Transactions: {history}
+                Provide a brief, analytical response. No markdown headers.
+                """
+
+                # THE GUARDRAIL: Strict rules for the Insight Engine
+                insight_rules = """
+                You are the AI core of SentinelNet, an enterprise financial fraud detection system. 
+                You analyze financial data, budgets, and risk scores. 
+                You MUST completely refuse to answer any query that is not related to finance, budget management, or fraud analysis.
                 """
                 
-                # Updated API call syntax for the new Google GenAI SDK
                 response = client.models.generate_content(
                     model='gemini-3.5-flash',
-                    contents=prompt
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=insight_rules,
+                        temperature=0.2 # Lower temperature makes the AI more strict and analytical
+                    )
                 )
                 return Response({"response": response.text}, status=status.HTTP_200_OK)
                 
             elif action_type == 'chat':
                 message = request.data.get('message')
-                prompt = f"You are SentinelNet Support, a sleek, secure AI assistant. Answer the following operator query professionally and concisely: {message}"
+                prompt = message
                 
-                # Updated API call syntax for the new Google GenAI SDK
+                # THE GUARDRAIL: Strict rules for the Chatbot
+                chat_rules = """
+                You are SentinelNet Support, a strict, secure AI assistant for an enterprise fraud detection platform. 
+                Your sole purpose is to assist operators with the SentinelNet platform, explain risk scores, budget mechanics, and financial security concepts.
+                If a user asks about anything outside of cybersecurity, finance, fraud detection, or navigating this dashboard, you must politely decline and state that your protocols restrict you to SentinelNet operations.
+                Keep responses brief and professional.
+                """
+                
                 response = client.models.generate_content(
                     model='gemini-3.5-flash',
-                    contents=prompt
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=chat_rules,
+                        temperature=0.3
+                    )
                 )
                 return Response({"response": response.text}, status=status.HTTP_200_OK)
                 
