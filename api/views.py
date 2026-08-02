@@ -65,22 +65,24 @@ class PredictFraudView(APIView):
             total_spent = float(total_spent_raw)
 
             advisory_message = ""
+            traffic_light = "green"
             
-            if is_fraud_detected:
-                advisory_message = "Blocked: Anomalous data patterns detected in metadata matrix."
+            if is_fraud_detected or probability > 0.60:
+                traffic_light = "red"
+                advisory_message = "DO NOT SHIP. High probability of chargeback or fake payment receipt. Cancel order or demand wire transfer."
+            elif probability > 0.25:
+                traffic_light = "yellow"
+                advisory_message = "CAUTION: Unusual pattern detected. Verify the buyer's identity or contact them directly before fulfilling this order."
             else:
-                if total_spent > budget:
-                    overage = total_spent - budget
-                    advisory_message = f"Warning: This purchase pushes you ${overage:,.2f} over your monthly budget of ${budget:,.2f}."
-                else:
-                    remaining = budget - total_spent
-                    advisory_message = f"Secure: You have ${remaining:,.2f} remaining in your monthly budget."
+                traffic_light = "green"
+                advisory_message = "CLEARED: Transaction matches safe customer patterns. Proceed with fulfillment."
             
             return Response({
                 "fraud_prediction": int(prediction),
                 "fraud_probability": round(float(probability), 4),
+                "traffic_light": traffic_light, # Send the color to React
                 "advisory": advisory_message,
-                "total_spent": float(total_spent)
+                "total_spent": float(total_spent) # We will rename this to "Total Verified Sales" in React
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
@@ -151,10 +153,12 @@ class AiAssistantView(APIView):
 
                 # THE GUARDRAIL: Strict rules for the Insight Engine
                 insight_rules = """
-                You are the AI core of SentinelNet, an enterprise financial fraud detection system. 
-                You analyze financial data, budgets, and risk scores. 
-                You MUST completely refuse to answer any query that is not related to finance, budget management, or fraud analysis.
-                """
+                    You are the AI core of SentinelNet SME, a protection portal for small business owners and freelancers.
+                    You analyze incoming orders, revenue targets, and fraud risks (like chargebacks or fake receipts).
+                    Explain risk factors in simple, non-technical terms. 
+                    If an order is high risk, suggest practical steps (e.g., "Ask for ID verification", "Wait for funds to clear before shipping").
+                    Refuse any queries unrelated to business operations or fraud protection.
+                    """
                 
                 response = client.models.generate_content(
                     model='gemini-3.5-flash',
@@ -172,11 +176,9 @@ class AiAssistantView(APIView):
                 
                 # THE GUARDRAIL: Strict rules for the Chatbot
                 chat_rules = """
-                You are SentinelNet Support, a strict, secure AI assistant for an enterprise fraud detection platform. 
-                Your sole purpose is to assist operators with the SentinelNet platform, explain risk scores, budget mechanics, and financial security concepts.
-                If a user asks about anything outside of cybersecurity, finance, fraud detection, or navigating this dashboard, you must politely decline and state that your protocols restrict you to SentinelNet operations.
-                Keep responses brief and professional.
-                """
+                    You are SentinelNet Merchant Support. You help small business owners verify orders and protect against payment fraud.
+                    Keep your answers brief, empathetic, and actionable. Avoid deep technical jargon like "feature vectors."
+                    """
                 
                 response = client.models.generate_content(
                     model='gemini-3.5-flash',
