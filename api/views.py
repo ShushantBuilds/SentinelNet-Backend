@@ -170,13 +170,25 @@ class AiAssistantView(APIView):
                 
             elif action_type == 'chat':
                 message = request.data.get('message')
-                prompt = message
+                page_context = request.data.get('page_context', 'No webpage context extracted.')
+                url = request.data.get('url', 'Unknown site')
                 
-                # THE GUARDRAIL: Strict rules for the Chatbot
+                # Bundle the active webpage context into the prompt
+                prompt = f"""
+                The user is currently viewing the website: {url}
+                
+                --- WEBPAGE CONTENT START ---
+                {page_context}
+                --- WEBPAGE CONTENT END ---
+                
+                User Query: "{message}"
+                """
+                
                 chat_rules = """
-                    You are the SentinelNet Safety Assistant. Your job is to help shoppers identify phishing links, fake storefronts, and online scams. 
-                    Keep your answers brief, protective, and easy to understand for non-technical users.
-                    """
+                You are SentinelNet Safety Assistant. You have real-time visibility into the exact webpage the user is looking at.
+                Use the provided webpage content to answer questions, analyze discount claims, check for hidden terms, or detect scam red flags.
+                If the user asks about the store, analyze the page text and provide concise, protective advice.
+                """
                 
                 response = client.models.generate_content(
                     model='gemini-3.5-flash',
