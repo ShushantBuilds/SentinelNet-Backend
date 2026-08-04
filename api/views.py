@@ -7,7 +7,7 @@ from google import genai
 from google.genai import types
 
 # MISTRAL & TAVILY IMPORTS
-from mistralai import Mistral
+from mistralai.client import Mistral
 from tavily import TavilyClient
 
 from rest_framework.views import APIView
