@@ -199,6 +199,52 @@ class AiAssistantView(APIView):
                     )
                 )
                 return Response({"response": response.text}, status=status.HTTP_200_OK)
+
+            # --- NEW: DEAL ANALYTICS ENGINE WITH LIVE SEARCH ---
+            elif action_type == 'analyze_deal':
+                product_url = request.data.get('product_url', '')
+                page_context = request.data.get('page_context', '')
+                
+                prompt = f"""
+                The user is considering buying a product at this link: {product_url}
+                Here is the scraped text from their current checkout page:
+                ---
+                {page_context}
+                ---
+                
+                Using your Google Search tool, look up the product to find its average retail price, and search the domain name of the store for recent reviews.
+                
+                Provide a brief, bulleted verdict covering:
+                1. Store Legitimacy: Are there recent scam reports or bad reviews about this specific domain?
+                2. Price History: What is the normal price of this product on major sites (like Amazon)? Is this current deal actually good, or a fake markup discount?
+                3. Page Red Flags: Based on the scraped text, are there hidden fees, strict return policies, or fake FOMO tactics (e.g., "Only 1 left!")?
+                4. Final Opinion: Is it safe and financially smart to complete this transaction right now?
+                """
+                
+                deal_rules = """
+                You are the SentinelNet Deal Analyst. Your job is to give users highly critical, objective advice on whether they should complete an online purchase. 
+                You MUST use Google Search to verify the store's reputation and the product's actual market value before answering.
+                Be concise, direct, and highly skeptical of "too good to be true" discounts.
+                """
+                
+                response = client.models.generate_content(
+                    model='gemini-3.5-flash',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=deal_rules,
+                        temperature=0.2,
+                        tools=[{"google_search": {}}] 
+                    )
+                )
+                
+                final_response_text = response.text
+                
+                # Append a verification badge if the search tool was successfully utilized
+                if hasattr(response.candidates[0], 'grounding_metadata') and response.candidates[0].grounding_metadata:
+                    if hasattr(response.candidates[0].grounding_metadata, 'grounding_chunks') and response.candidates[0].grounding_metadata.grounding_chunks:
+                        final_response_text += "\n\nSources verified via Google Search."
+
+                return Response({"response": final_response_text}, status=status.HTTP_200_OK)
                 
             return Response({"error": "Invalid action type specified."}, status=status.HTTP_400_BAD_REQUEST)
             
