@@ -1,19 +1,44 @@
+import os
+import json
+import numpy as np
+
+# GOOGLE GEMINI IMPORTS
 from google import genai
 from google.genai import types
+
+# MISTRAL & TAVILY IMPORTS
+from mistralai import Mistral
+from tavily import TavilyClient
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status, generics
-from .apps import ApiConfig
-import numpy as np
-from .serializers import UserSerializer
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.contrib.auth.models import User
-
-# NEW IMPORTS FOR THE AI ADVISORY ENGINE
 from django.db.models import Sum
+
+from .apps import ApiConfig
+from .serializers import UserSerializer
 from .models import *
 
-client = genai.Client()
+# --- INITIALIZE AI CLIENTS ---
+client = genai.Client()  # Uses GEMINI_API_KEY from environment
+mistral_client = Mistral(api_key=os.environ.get("MISTRAL_API_KEY"))
+tavily_client = TavilyClient(api_key=os.environ.get("TAVILY_API_KEY"))
+
+
+def search_web_for_deal(query: str) -> str:
+    """Helper function to execute the Tavily search for Mistral AI."""
+    try:
+        response = tavily_client.search(query=query, search_depth="basic", max_results=3)
+        formatted_results = [
+            f"Source: {res['url']}\nContent: {res['content']}" 
+            for res in response.get('results', [])
+        ]
+        return "\n\n".join(formatted_results)
+    except Exception as e:
+        return f"Search failed: {str(e)}"
+
 
 class HealthCheckView(APIView):
     def get(self, request):
@@ -21,6 +46,7 @@ class HealthCheckView(APIView):
             "status": "online", 
             "model_loaded": ApiConfig.rf_model is not None
         }, status=status.HTTP_200_OK)
+
 
 class PredictFraudView(APIView):
     permission_classes = [IsAuthenticated]
@@ -49,7 +75,6 @@ class PredictFraudView(APIView):
                 is_fraud=is_fraud_detected
             )
 
-            # THE FIX: Safely get the profile, or create it if it's missing!
             profile, created = OperatorProfile.objects.get_or_create(
                 user=request.user, 
                 defaults={'monthly_budget_limit': 5000.00}
@@ -80,20 +105,22 @@ class PredictFraudView(APIView):
             return Response({
                 "fraud_prediction": int(prediction),
                 "fraud_probability": round(float(probability), 4),
-                "shield_status": shield_status, # Send status to React
+                "shield_status": shield_status,
                 "advisory": advisory_message,
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
     permission_classes = (AllowAny,) 
     serializer_class = UserSerializer
 
+
 class ManageProfileView(APIView):
-    permission_classes = [IsAuthenticated] # Must be logged in
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         profile = request.user.profile
@@ -118,18 +145,15 @@ class ManageProfileView(APIView):
 
         TransactionRecord.objects.filter(user=request.user).delete()
         
-        # 1. Reset the tracking field to 0 if stored directly on the profile
         if hasattr(profile, 'total_accumulated_spend'):
             profile.total_accumulated_spend = 0
             profile.save()
             
-        # 2. OPTIONAL: If spend is calculated from a Transaction model, clear them out:
-        # request.user.transactions.all().delete()
-        
         return Response({
             "message": "Total accumulated spend has been reset.",
             "total_accumulated_spend": 0
         }, status=status.HTTP_200_OK)
+
 
 class AiAssistantView(APIView):
     permission_classes = [IsAuthenticated]
@@ -138,32 +162,33 @@ class AiAssistantView(APIView):
         action_type = request.data.get('type')
         
         try:
+            # ==========================================
+            # ENGINE 1: GEMINI (Used for Insight & Chat)
+            # ==========================================
             if action_type == 'insight':
                 query = request.data.get('query')
                 history = request.data.get('history', [])
                 budget = request.data.get('budget', 0)
                 
-                # The user's specific request
                 prompt = f"""
                 The operator has asked: "{query}"
                 Current System Context: Target Budget: ${budget}, Recent Transactions: {history}
                 Provide a brief, analytical response. No markdown headers.
                 """
 
-                # THE GUARDRAIL: Strict rules for the Insight Engine
                 insight_rules = """
                     You are the SentinelNet Checkout Shield, an AI built to protect everyday consumers from online shopping scams.
                     The user is about to make a payment. You analyze e-commerce websites, merchant data, and checkout patterns for scam indicators (e.g., brand new domains, fake countdown timers, unencrypted gateways).
                     Explain the exact risks to the shopper in plain, urgent language. 
                     Refuse any queries unrelated to online shopping safety, e-commerce, or payment fraud.
-                    """
+                """
                 
                 response = client.models.generate_content(
                     model='gemini-3.5-flash',
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         system_instruction=insight_rules,
-                        temperature=0.2 # Lower temperature makes the AI more strict and analytical
+                        temperature=0.2
                     )
                 )
                 return Response({"response": response.text}, status=status.HTTP_200_OK)
@@ -173,7 +198,6 @@ class AiAssistantView(APIView):
                 page_context = request.data.get('page_context', 'No webpage context extracted.')
                 url = request.data.get('url', 'Unknown site')
                 
-                # Bundle the active webpage context into the prompt
                 prompt = f"""
                 The user is currently viewing the website: {url}
                 
@@ -200,7 +224,9 @@ class AiAssistantView(APIView):
                 )
                 return Response({"response": response.text}, status=status.HTTP_200_OK)
 
-            # --- NEW: DEAL ANALYTICS ENGINE WITH LIVE SEARCH ---
+            # ==========================================
+            # ENGINE 2: MISTRAL + TAVILY (Deal Analysis)
+            # ==========================================
             elif action_type == 'analyze_deal':
                 product_url = request.data.get('product_url', '')
                 page_context = request.data.get('page_context', '')
@@ -211,42 +237,72 @@ class AiAssistantView(APIView):
                 ---
                 {page_context}
                 ---
-                
-                Using your Google Search tool, look up the product to find its average retail price, and search the domain name of the store for recent reviews.
-                
-                Provide a brief, bulleted verdict covering:
-                1. Store Legitimacy: Are there recent scam reports or bad reviews about this specific domain?
-                2. Price History: What is the normal price of this product on major sites (like Amazon)? Is this current deal actually good, or a fake markup discount?
-                3. Page Red Flags: Based on the scraped text, are there hidden fees, strict return policies, or fake FOMO tactics (e.g., "Only 1 left!")?
-                4. Final Opinion: Is it safe and financially smart to complete this transaction right now?
                 """
                 
                 deal_rules = """
                 You are the SentinelNet Deal Analyst. Your job is to give users highly critical, objective advice on whether they should complete an online purchase. 
-                You MUST use Google Search to verify the store's reputation and the product's actual market value before answering.
-                Be concise, direct, and highly skeptical of "too good to be true" discounts.
+                Use the 'search_web' tool to verify the store's reputation and the product's actual market value.
+                Provide a brief, bulleted verdict covering: Store Legitimacy, Price History, Page Red Flags, and a Final Opinion.
                 """
                 
-                response = client.models.generate_content(
-                    model='gemini-3.5-flash',
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=deal_rules,
-                        temperature=0.2,
-                        tools=[{"google_search": {}}] 
-                    )
+                tools = [{
+                    "type": "function",
+                    "function": {
+                        "name": "search_web",
+                        "description": "Search the live web for product price history, store reviews, and scam reports.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "The search query (e.g., 'Is [store name] legit?' or '[product name] average price')."
+                                }
+                            },
+                            "required": ["query"],
+                        },
+                    },
+                }]
+                
+                messages = [
+                    {"role": "system", "content": deal_rules},
+                    {"role": "user", "content": prompt}
+                ]
+                
+                response = mistral_client.chat.complete(
+                    model="mistral-small-latest",
+                    messages=messages,
+                    tools=tools,
+                    temperature=0.2
                 )
                 
-                final_response_text = response.text
+                response_message = response.choices[0].message
+                messages.append(response_message)
                 
-                # Append a verification badge if the search tool was successfully utilized
-                if hasattr(response.candidates[0], 'grounding_metadata') and response.candidates[0].grounding_metadata:
-                    if hasattr(response.candidates[0].grounding_metadata, 'grounding_chunks') and response.candidates[0].grounding_metadata.grounding_chunks:
-                        final_response_text += "\n\nSources verified via Google Search."
-
-                return Response({"response": final_response_text}, status=status.HTTP_200_OK)
+                if response_message.tool_calls:
+                    for tool_call in response_message.tool_calls:
+                        if tool_call.function.name == "search_web":
+                            args = json.loads(tool_call.function.arguments)
+                            search_results = search_web_for_deal(args["query"])
+                            
+                            messages.append({
+                                "role": "tool",
+                                "name": "search_web",
+                                "content": search_results,
+                                "tool_call_id": tool_call.id
+                            })
+                            
+                    final_response = mistral_client.chat.complete(
+                        model="mistral-small-latest",
+                        messages=messages,
+                        temperature=0.2
+                    )
+                    final_text = final_response.choices[0].message.content + "\n\nSources verified via Tavily Search."
+                else:
+                    final_text = response_message.content
+                    
+                return Response({"response": final_text}, status=status.HTTP_200_OK)
                 
             return Response({"error": "Invalid action type specified."}, status=status.HTTP_400_BAD_REQUEST)
             
         except Exception as e:
-            return Response({"error": f"Google API Error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"error": f"AI Assistant Error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
