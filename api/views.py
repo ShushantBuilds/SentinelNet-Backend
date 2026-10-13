@@ -2,12 +2,11 @@ import os
 import json
 import numpy as np
 
-# GOOGLE GEMINI IMPORTS
+
 from google import genai
 from google.genai import types
 
-# MISTRAL & TAVILY IMPORTS
-from mistralai.client import Mistral
+from groq import Groq
 from tavily import TavilyClient
 
 from rest_framework.views import APIView
@@ -23,7 +22,7 @@ from .models import *
 
 # --- INITIALIZE AI CLIENTS ---
 client = genai.Client()  # Uses GEMINI_API_KEY from environment
-mistral_client = Mistral(api_key=os.environ.get("MISTRAL_API_KEY"))
+groq_client = Groq(api_key=os.environ.get("PROJECT_API"))
 tavily_client = TavilyClient(api_key=os.environ.get("TAVILY_API_KEY"))
 
 
@@ -71,7 +70,7 @@ class AnalyzeCheckoutView(APIView):
             ml_risk_score = int(ml_probability * 100)
 
             # ==========================================
-            # ENGINE 2: MISTRAL + TAVILY (70% Weight)
+            # ENGINE 2: GROQ + TAVILY (70% Weight)
             # ==========================================
             system_rules = """
             You are a cybersecurity agent. Analyze the store reputation using the web search tool.
@@ -80,7 +79,7 @@ class AnalyzeCheckoutView(APIView):
             2. "llm_risk_score": An integer from 0 (completely safe) to 100 (confirmed scam).
             """
             
-            prompt = f"Product URL: {url}\nScraped Page Context: {page_context}\nTransaction Amount: ${amount}"
+            prompt = f"Product URL: {url}\nScraped Page Context: {page_context}\nTransaction Amount: \${amount}"
             
             tools = [{
                 "type": "function",
@@ -102,9 +101,9 @@ class AnalyzeCheckoutView(APIView):
                 {"role": "user", "content": prompt}
             ]
             
-            # First pass: Mistral decides if it needs to search the web
-            response = mistral_client.chat.complete(
-                model="mistral-small-latest",
+            # --- CHANGE 1: Use groq_client for the First Pass ---
+            response = groq_client.chat.completions.create(
+                model="llama3-8b-8192",
                 messages=messages,
                 tools=tools,
                 temperature=0.2
@@ -127,25 +126,25 @@ class AnalyzeCheckoutView(APIView):
                             "tool_call_id": tool_call.id
                         })
                         
-                # Second pass: Mistral generates the final JSON utilizing the search results
-                final_response = mistral_client.chat.complete(
-                    model="mistral-small-latest",
+                # --- CHANGE 2: Use groq_client for the Second Pass ---
+                final_response = groq_client.chat.completions.create(
+                    model="llama3-8b-8192",
                     messages=messages,
                     response_format={"type": "json_object"},
                     temperature=0.2
                 )
                 final_content = final_response.choices[0].message.content
             else:
-                
-                final_response = mistral_client.chat.complete(
-                    model="mistral-small-latest",
+                # Already correct in your code
+                final_response = groq_client.chat.completions.create(
+                    model="llama3-8b-8192", 
                     messages=messages,
                     response_format={"type": "json_object"},
                     temperature=0.2
                 )
                 final_content = final_response.choices[0].message.content
-
-            
+                
+            # Strip backticks and parse JSON safely
             clean_json = final_content.strip()
             if clean_json.startswith("```json"):
                 clean_json = clean_json[7:]
