@@ -103,7 +103,7 @@ class AnalyzeCheckoutView(APIView):
             
             # --- CHANGE 1: Use groq_client for the First Pass ---
             response = groq_client.chat.completions.create(
-                model="llama3-8b-8192",
+                model="llama-3.1-8b-instant",
                 messages=messages,
                 tools=tools,
                 temperature=0.2
@@ -128,7 +128,7 @@ class AnalyzeCheckoutView(APIView):
                         
                 # --- CHANGE 2: Use groq_client for the Second Pass ---
                 final_response = groq_client.chat.completions.create(
-                    model="llama3-8b-8192",
+                    model="llama-3.1-8b-instant",
                     messages=messages,
                     response_format={"type": "json_object"},
                     temperature=0.2
@@ -137,7 +137,7 @@ class AnalyzeCheckoutView(APIView):
             else:
                 # Already correct in your code
                 final_response = groq_client.chat.completions.create(
-                    model="llama3-8b-8192", 
+                    model="llama-3.1-8b-instant", 
                     messages=messages,
                     response_format={"type": "json_object"},
                     temperature=0.2
