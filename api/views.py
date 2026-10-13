@@ -24,6 +24,7 @@ from .models import *
 client = genai.Client()  # Uses GEMINI_API_KEY from environment
 groq_client = Groq(api_key=os.environ.get("PROJECT_API"))
 tavily_client = TavilyClient(api_key=os.environ.get("TAVILY_API_KEY"))
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
 def search_web_for_deal(query: str) -> str:
@@ -103,7 +104,7 @@ class AnalyzeCheckoutView(APIView):
             
             # --- CHANGE 1: Use groq_client for the First Pass ---
             response = groq_client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model=GROQ_MODEL,
                 messages=messages,
                 tools=tools,
                 temperature=0.2
@@ -128,7 +129,7 @@ class AnalyzeCheckoutView(APIView):
                         
                 # --- CHANGE 2: Use groq_client for the Second Pass ---
                 final_response = groq_client.chat.completions.create(
-                    model="llama-3.1-8b-instant",
+                    model=GROQ_MODEL,
                     messages=messages,
                     response_format={"type": "json_object"},
                     temperature=0.2
@@ -137,7 +138,7 @@ class AnalyzeCheckoutView(APIView):
             else:
                 # Already correct in your code
                 final_response = groq_client.chat.completions.create(
-                    model="llama-3.1-8b-instant", 
+                    model=GROQ_MODEL, 
                     messages=messages,
                     response_format={"type": "json_object"},
                     temperature=0.2
