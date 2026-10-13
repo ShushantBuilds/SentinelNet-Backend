@@ -136,7 +136,7 @@ class AnalyzeCheckoutView(APIView):
                 )
                 final_content = final_response.choices[0].message.content
             else:
-                # Fallback if Mistral didn't use the tool (we still force JSON output)
+                
                 final_response = mistral_client.chat.complete(
                     model="mistral-small-latest",
                     messages=messages,
@@ -145,9 +145,23 @@ class AnalyzeCheckoutView(APIView):
                 )
                 final_content = final_response.choices[0].message.content
 
-            llm_data = json.loads(final_content)
-            llm_risk_score = llm_data.get('llm_risk_score', 50)
-            seller_analysis = llm_data.get('analysis', 'Analysis failed.')
+            
+            clean_json = final_content.strip()
+            if clean_json.startswith("```json"):
+                clean_json = clean_json[7:]
+            if clean_json.startswith("```"):
+                clean_json = clean_json[3:]
+            if clean_json.endswith("```"):
+                clean_json = clean_json[:-3]
+            clean_json = clean_json.strip()
+
+            try:
+                llm_data = json.loads(clean_json)
+                llm_risk_score = int(llm_data.get('llm_risk_score', 50))
+                seller_analysis = llm_data.get('analysis', 'Analysis failed.')
+            except json.JSONDecodeError:
+                llm_risk_score = 50
+                seller_analysis = f"AI formatting error. Raw output: {clean_json}"    
 
             # ==========================================
             # ENGINE 3: THE BLENDED VERDICT
